@@ -1,5 +1,29 @@
 # Change Log
 
+## 0.10.0
+
+### New Features
+- **Customizable Quick Fixes**: Added `quick_fixes.show` setting to customize which quick fixes appear in the quick fix menu
+  - Select only the quick fixes you need (e.g., just `constructor` and `copyWith`)
+  - Prevents duplicate selections in VS Code settings
+  - Options: `dataClass`, `constructor`, `copyWith`, `toMap`, `fromMap`, `toJson`, `fromJson`, `toString`, `stringify`, `equality`, `useEquatable`
+- **Smart Quick Fixes**: Quick fixes now automatically hide for methods that already exist in the class
+  - If `toString()` already exists, "Generate toString" won't appear
+  - Keeps the quick fix menu clean and relevant
+- **Equatable Stringify Support**: Added `toString.useStringify` setting
+  - When enabled and Equatable is used, generates `@override bool? get stringify => true;` instead of `toString()` method
+  - Quick fix "Generate stringify" available when Equatable is detected
+  - Automatically switches between `toString()` and `stringify` based on setting and Equatable usage
+
+### Improvements
+- **Enhanced fromMap Default Values**: `fromMap.default_values` setting now controls default values for both nullable and required (non-nullable) properties
+  - When `false` (default): Required properties won't get default values if missing from map
+  - When `true`: Required properties will get default values if missing from map
+
+### Bug Fixes
+- Fixed duplicate quick fix selections in VS Code settings UI
+- Quick fixes now respect method existence - won't show for already-generated methods
+
 ## 0.9.0
 
 ### Major Fixes

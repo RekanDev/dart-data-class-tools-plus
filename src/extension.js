@@ -819,8 +819,19 @@ class DataClassGenerator {
                         this.insertFromJson(clazz);
                 }
 
-                if (readSetting('toString.enabled') && this.isPartSelected('toString'))
-                    this.insertToString(clazz);
+                if (readSetting('toString.enabled') && this.isPartSelected('toString')) {
+                    const useStringify = readSetting('toString.useStringify') && (clazz.usesEquatable || readSetting('useEquatable'));
+                    if (useStringify) {
+                        this.insertStringify(clazz);
+                    } else {
+                        this.insertToString(clazz);
+                    }
+                }
+
+                // Handle stringify quick fix separately (only when explicitly selected, not during full data class generation)
+                if (this.part == 'stringify' && (clazz.usesEquatable || readSetting('useEquatable'))) {
+                    this.insertStringify(clazz);
+                }
 
                 if ((clazz.usesEquatable || readSetting('useEquatable')) && this.isPartSelected('useEquatable')) {
                     this.insertEquatable(clazz);
@@ -1252,16 +1263,20 @@ class DataClassGenerator {
                     }
                     method += ` : null`;
                 } else {
-                    // For non-nullable collections, always provide a default if null
+                    // For non-nullable collections, provide a default if null only if setting is enabled
                     method += `${p.type}.from(`;
                     if (p.isPrimitive) {
-                        method += `${value} ?? const ${defaultCollection})`;
+                        method += withDefaultValues ? `${value} ?? const ${defaultCollection})` : `${value})`;
                     } else {
-                        method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                        if (withDefaultValues) {
+                            method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                        } else {
+                            method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}))`;
+                        }
                     }
                 }
             } else if (p.isPrimitive) {
-                const defaultValue = !p.isNullable ? ` ?? ${p.defValue}` : '';
+                const defaultValue = (!p.isNullable && withDefaultValues) ? ` ?? ${p.defValue}` : '';
                 method += `${value}${p.isDouble ? '?.toDouble()' : p.isInt ? '?.toInt()' : ''}${defaultValue}`;
             } else {
                 method += customTypeMapping(p);
@@ -1328,6 +1343,17 @@ class DataClassGenerator {
         method += !short ? '}' : '';
 
         this.appendOrReplace('toString', method, 'String toString()', clazz);
+    }
+
+    /**
+     * @param {DartClass} clazz
+     */
+    insertStringify(clazz) {
+        // Ensure Equatable is set up
+        this.addEquatableDetails(clazz);
+
+        const method = '@override\nbool? get stringify => true;';
+        this.appendOrReplace('stringify', method, 'bool? get stringify', clazz);
     }
 
     /**
@@ -2100,9 +2126,11 @@ class DataClassCodeActions {
         this.clazz = this.getClass();
 
         // * Class independent code actions.
-        const codeActions = [
-            this.createImportsFix(),
-        ];
+        const codeActions = [];
+        const importsFix = this.createImportsFix();
+        if (importsFix) {
+            codeActions.push(importsFix);
+        }
 
         if (this.clazz == null || !this.clazz.isValid) {
             return codeActions;
@@ -2116,10 +2144,10 @@ class DataClassCodeActions {
         if (!(isAtClassDeclaration || isInProperties || isInConstrRange)) return codeActions;
 
         // * Class code actions.
-        if (!this.clazz.isWidget)
+        if (!this.clazz.isWidget && shouldShowQuickFix('dataClass'))
             codeActions.push(this.createDataClassFix(this.clazz));
 
-        if (readSetting('constructor.enabled'))
+        if (readSetting('constructor.enabled') && shouldShowQuickFix('constructor') && !this.clazz.hasConstructor)
             codeActions.push(this.createConstructorFix());
 
         // Only add constructor fix for widget classes.
@@ -2127,26 +2155,34 @@ class DataClassCodeActions {
             // Copy with and JSON serialization should be handled by
             // subclasses. Allow for sealed class subclasses too.
             if ((!this.clazz.isAbstract && !this.clazz.isSealed) || this.clazz.isSealedSubclass) {
-                if (readSetting('copyWith.enabled'))
+                if (readSetting('copyWith.enabled') && shouldShowQuickFix('copyWith') && !this.methodExists(`${clazz.name} copyWith(`))
                     codeActions.push(this.createCopyWithFix());
                 // Separate serialization methods in quick fixes
-                if (readSetting('toMap.enabled'))
+                if (readSetting('toMap.enabled') && shouldShowQuickFix('toMap') && !this.methodExists('Map<String, dynamic> toMap()'))
                     codeActions.push(this.constructQuickFix('toMap', 'Generate toMap'));
-                if (readSetting('fromMap.enabled'))
+                if (readSetting('fromMap.enabled') && shouldShowQuickFix('fromMap') && !this.methodExists(`factory ${clazz.name}.fromMap(Map<String, dynamic> map)`))
                     codeActions.push(this.constructQuickFix('fromMap', 'Generate fromMap'));
-                if (readSetting('toJson.enabled'))
+                if (readSetting('toJson.enabled') && shouldShowQuickFix('toJson') && !this.methodExists('String toJson()'))
                     codeActions.push(this.constructQuickFix('toJson', 'Generate toJson'));
-                if (readSetting('fromJson.enabled'))
+                if (readSetting('fromJson.enabled') && shouldShowQuickFix('fromJson') && !this.methodExists(`factory ${clazz.name}.fromJson(String source)`))
                     codeActions.push(this.constructQuickFix('fromJson', 'Generate fromJson'));
             }
 
-            if (readSetting('toString.enabled'))
-                codeActions.push(this.createToStringFix());
+            if (readSetting('toString.enabled')) {
+                const useStringify = readSetting('toString.useStringify') && (clazz.usesEquatable || readSetting('useEquatable'));
+                if (useStringify && shouldShowQuickFix('stringify') && !this.methodExists('bool? get stringify')) {
+                    // Show stringify quick fix if setting is true and Equatable is used
+                    codeActions.push(this.createStringifyFix());
+                } else if (!useStringify && shouldShowQuickFix('toString') && !this.methodExists('String toString()')) {
+                    // Show toString quick fix if setting is false or Equatable is not used
+                    codeActions.push(this.createToStringFix());
+                }
+            }
 
-            if (clazz.usesEquatable || readSetting('useEquatable'))
+            if ((clazz.usesEquatable || readSetting('useEquatable')) && shouldShowQuickFix('useEquatable') && !this.methodExists('List<Object> get props') && !this.methodExists('List<Object?> get props'))
                 codeActions.push(this.createUseEquatableFix());
             else {
-                if (readSettings(['equality.enabled', 'hashCode.enabled']))
+                if (readSettings(['equality.enabled', 'hashCode.enabled']) && shouldShowQuickFix('equality') && !this.methodExists('bool operator =='))
                     codeActions.push(this.createEqualityFix());
             }
         }
@@ -2222,6 +2258,10 @@ class DataClassCodeActions {
         return this.constructQuickFix('toString', 'Generate toString');
     }
 
+    createStringifyFix() {
+        return this.constructQuickFix('stringify', 'Generate stringify');
+    }
+
     createEqualityFix() {
         return this.constructQuickFix('equality', 'Generate equality');
     }
@@ -2255,6 +2295,17 @@ class DataClassCodeActions {
                 return clazz;
             }
         }
+    }
+
+    /**
+     * Check if a method already exists in the class
+     * @param {string} finder - The method signature to find (e.g., "String toString()", "copyWith(")
+     * @returns {boolean} - True if the method exists
+     */
+    methodExists(finder) {
+        if (!this.clazz || !this.generator) return false;
+        const part = this.generator.findPart('', finder, this.clazz);
+        return part != null && part.isValid;
     }
 }
 
@@ -2678,6 +2729,20 @@ function readSettings(keys) {
     }
 
     return false;
+}
+
+/**
+ * Check if a quick fix should be shown based on the quick_fixes.show setting
+ * @param {string} quickFixName - The name of the quick fix (e.g., "constructor", "copyWith", etc.)
+ * @returns {boolean} - True if the quick fix should be shown
+ */
+function shouldShowQuickFix(quickFixName) {
+    const showList = readSetting('quick_fixes.show');
+    // If setting is not configured or empty, show all (backward compatibility)
+    if (!showList || showList.length === 0) {
+        return true;
+    }
+    return showList.includes(quickFixName);
 }
 
 /**

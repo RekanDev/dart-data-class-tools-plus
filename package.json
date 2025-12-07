@@ -3,7 +3,7 @@
 	"displayName": "Dart Data Class Tools Plus",
 	"description": "Create dart data classes easily, fast and without writing boilerplate or running code generation.",
 	"publisher": "RekanDev",
-	"version": "0.9.0",
+	"version": "0.10.0",
 	"engines": {
 		"vscode": "^1.65.0"
 	},
@@ -66,6 +66,39 @@
 						"default": true,
 						"description": "If true, enables quick fixes to quickly generate data classes or specific methods only."
 					},
+					"dart-data-class-generator.quick_fixes.show": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"dataClass",
+								"constructor",
+								"copyWith",
+								"toMap",
+								"fromMap",
+								"toJson",
+								"fromJson",
+								"toString",
+								"stringify",
+								"equality",
+								"useEquatable"
+							]
+						},
+						"default": [
+							"dataClass",
+							"constructor",
+							"copyWith",
+							"toMap",
+							"fromMap",
+							"toJson",
+							"fromJson",
+							"toString",
+							"stringify",
+							"equality",
+							"useEquatable"
+						],
+						"description": "List of quick fixes to show. Select which quick fixes should be available. If empty, all enabled quick fixes will be shown."
+					},
 					"dart-data-class-generator.fromMap.default_values": {
 						"type": "boolean",
 						"enum": [
@@ -73,7 +106,7 @@
 							false
 						],
 						"default": false,
-						"description": "If true, checks if a field is null when deserializing and provides a non-null default value."
+						"description": "If true, checks if a field is null when deserializing and provides a non-null default value. This applies to both nullable and required (non-nullable) properties."
 					},
 					"dart-data-class-generator.constructor.default_values": {
 						"type": "boolean",
@@ -174,6 +207,15 @@
 						],
 						"default": true,
 						"description": "If true, generates a toString function for a data class."
+					},
+					"dart-data-class-generator.toString.useStringify": {
+						"type": "boolean",
+						"enum": [
+							true,
+							false
+						],
+						"default": false,
+						"description": "If true and Equatable is used, generates stringify method instead of toString. If Equatable is not used, toString will be generated instead."
 					},
 					"dart-data-class-generator.equality.enabled": {
 						"type": "boolean",
