@@ -1,5 +1,46 @@
 # Change Log
 
+## 0.9.0
+
+### Major Fixes
+- Fixed collection equality operators for non-Flutter projects ([issues #6, #23](https://github.com/ricardoemerson/dart-data-class-tools/issues/6))
+  - Now uses `ListEquality().equals`, `MapEquality().equals`, `SetEquality().equals` from `package:collection/collection.dart`
+  - Flutter projects continue using `listEquals`, `mapEquals`, `setEquals` from `package:flutter/foundation.dart`
+- Fixed null checks for collections in `fromMap()` ([issue #13](https://github.com/ricardoemerson/dart-data-class-tools/issues/13))
+  - Added proper null handling for nullable collections
+  - Non-nullable collections now default to empty collections when null
+- Fixed LinkedMap type errors ([issue #19](https://github.com/ricardoemerson/dart-data-class-tools/issues/19))
+  - Added `Map<String, dynamic>.from()` conversion in both `fromMap` and `fromJson`
+  - Handles `LinkedMap` returned by `json.decode()`
+- Improved DateTime serialization ([issue #22](https://github.com/ricardoemerson/dart-data-class-tools/issues/22))
+  - Now uses ISO 8601 format: `toUtc().toIso8601String()` instead of milliseconds
+  - Deserialization uses `DateTime.parse().toLocal()`
+- Fixed enum serialization ([issue #7](https://github.com/ricardoemerson/dart-data-class-tools/issues/7))
+  - Enums now serialize as string names (`.name`) instead of indices
+  - Deserialization uses `firstWhere` to parse from string names
+- Fixed copyWith for sealed class subclasses ([issue #8](https://github.com/ricardoemerson/dart-data-class-tools/issues/8))
+  - Added detection for sealed classes and their subclasses
+  - copyWith now works correctly for subclasses of sealed classes
+- Fixed JSON file separation ([issue #20](https://github.com/ricardoemerson/dart-data-class-tools/issues/20))
+  - Cross-platform path handling using Node.js `path` module
+  - Works correctly on Windows, macOS, and Linux
+- Separated serialization methods in quick fixes ([issue #1](https://github.com/ricardoemerson/dart-data-class-tools/issues/1))
+  - toMap, fromMap, toJson, and fromJson are now separate quick fix options
+
+### New Features
+- Automatic const constructors
+  - Constructors are automatically marked as `const` when all properties are `final`
+- Blank line before constructor
+  - Added blank line between properties and constructor for better code formatting
+- Improved comment handling
+  - Comments are now properly ignored when detecting property modifiers
+
+### Technical Improvements
+- Better null safety handling for collections
+- Improved DateTime field type handling
+- Enhanced enum detection and serialization
+- Cross-platform file path handling
+
 ## 0.8.1
 
 - Revert the previous behavior.
@@ -16,7 +57,6 @@
 
 - Added support for uses ValueGetter for nullable types when generates copyWith.
 - Added the setting `copyWith.usesValueGetter` to enable/disable uses of ValueGetter for nullable types when generates copyWith.
-
 
 ## 0.5.7
 

@@ -2,7 +2,7 @@
 	<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
 		<Metadata>
 			<Identity Language="en-US" Id="dart-data-class-generator" Version="0.5.5" Publisher="ricardo-emerson" />
-			<DisplayName>Dart Data Class Generator</DisplayName>
+			<DisplayName>Dart Data Class Generator Plus</DisplayName>
 			<Description xml:space="preserve">Create dart data classes easily, fast and without writing boilerplate or running code generation.</Description>
 			<Tags>dart data class generator,dart data class,dart data,dart,data class generator</Tags>
 			<Categories>Programming Languages,Other</Categories>

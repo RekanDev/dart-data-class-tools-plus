@@ -1,0 +1,16 @@
+# Exclude test files
+test.dart
+test_json.json
+PUBLISHING.md
+
+# Exclude development files
+.vscode/**
+.gitignore
+*.vsix
+
+# Exclude node_modules (if not needed)
+# node_modules/**
+
+# Exclude source maps and other build artifacts
+*.map
+

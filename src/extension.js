@@ -295,6 +295,17 @@ class DartClass {
         return this.properties.length > 0;
     }
 
+    get allPropertiesFinal() {
+        if (this.properties.length === 0) return false;
+        // Check that ALL properties are final - if any property is not final, return false
+        for (let prop of this.properties) {
+            if (!prop.isFinal) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     get fewProps() {
         return this.properties.length <= 3;
     }
@@ -317,6 +328,17 @@ class DartClass {
 
     get isAbstract() {
         return this.classContent.trimLeft().startsWith('abstract class');
+    }
+
+    get isSealed() {
+        return this.classContent.trimLeft().startsWith('sealed class');
+    }
+
+    get isSealedSubclass() {
+        // Check if this class extends a sealed class by checking if superclass exists
+        // and the parent might be sealed (we can't detect parent's sealed status easily,
+        // but we can allow copyWith for any non-abstract, non-sealed class with a superclass)
+        return this.hasSuperclass && !this.isAbstract && !this.isSealed;
     }
 
     get usesEquatable() {
@@ -392,7 +414,7 @@ class DartClass {
                     if (list.length == 0) return;
 
                     const length = list.length;
-                    classDeclaration += ` ${ keyword } `;
+                    classDeclaration += ` ${keyword} `;
 
                     for (let x = 0; x < length; x++) {
                         const isLast = x == length - 1;
@@ -411,6 +433,7 @@ class DartClass {
                 classDeclaration += ' {\n';
                 replacement = classDeclaration + replacement;
             } else if (l == this.propsEndAtLine && this.constr != null && !this.hasConstructor) {
+                // Constructor already has blank line from append() method
                 replacement = this.constr + replacement;
                 replacement = line + replacement;
             } else if (l == this.endsAtLine && this.isValid) {
@@ -782,16 +805,17 @@ class DataClassGenerator {
                 this.insertConstructor(clazz);
 
             if (!clazz.isWidget) {
-                if (!clazz.isAbstract) {
+                // Generate copyWith for non-abstract, non-sealed classes and sealed class subclasses
+                if ((!clazz.isAbstract && !clazz.isSealed) || clazz.isSealedSubclass) {
                     if (readSetting('copyWith.enabled') && this.isPartSelected('copyWith'))
                         this.insertCopyWith(clazz);
-                    if (readSetting('toMap.enabled') && this.isPartSelected('serialization'))
+                    if (readSetting('toMap.enabled') && (this.isPartSelected('toMap') || this.isPartSelected('serialization')))
                         this.insertToMap(clazz);
-                    if (readSetting('fromMap.enabled') && this.isPartSelected('serialization'))
+                    if (readSetting('fromMap.enabled') && (this.isPartSelected('fromMap') || this.isPartSelected('serialization')))
                         this.insertFromMap(clazz);
-                    if (readSetting('toJson.enabled') && this.isPartSelected('serialization'))
+                    if (readSetting('toJson.enabled') && (this.isPartSelected('toJson') || this.isPartSelected('serialization')))
                         this.insertToJson(clazz);
-                    if (readSetting('fromJson.enabled') && this.isPartSelected('serialization'))
+                    if (readSetting('fromJson.enabled') && (this.isPartSelected('fromJson') || this.isPartSelected('serialization')))
                         this.insertFromJson(clazz);
                 }
 
@@ -961,8 +985,14 @@ class DataClassGenerator {
         let endBracket = '})';
 
         if (clazz.constr != null) {
-            if (clazz.constr.trimLeft().startsWith('const'))
+            // Add const if all properties are final (even if existing constructor doesn't have it)
+            // Only add const if the existing constructor already has it OR all properties are final
+            const existingHasConst = clazz.constr.trimLeft().startsWith('const');
+            const allFinal = clazz.properties.length > 0 && clazz.allPropertiesFinal;
+
+            if (existingHasConst || allFinal) {
                 constr += 'const ';
+            }
 
             // Detect custom constructor brackets and preserve them.
             const fConstr = clazz.constr.replace('const', '').trimLeft();
@@ -975,8 +1005,13 @@ class DataClassGenerator {
             else if (fConstr.includes('})')) endBracket = '})';
             else endBracket = ')';
         } else {
-            if (clazz.isWidget)
+            // Add const if all properties are final (or if it's a widget)
+            // Only add const if ALL properties are final - check explicitly
+            const allFinal = clazz.properties.length > 0 && clazz.allPropertiesFinal;
+
+            if (clazz.isWidget || allFinal) {
                 constr += 'const ';
+            }
         }
 
         constr += clazz.name + startBracket + '\n';
@@ -1083,9 +1118,9 @@ class DataClassGenerator {
 
         for (let p of clazz.properties) {
             if (usesValueGetter && p.isNullable) {
-                method += `    ${ clazz.hasNamedConstructor ? `${ p.name }: ` : '' }${ p.name } != null ? ${ p.name }() : this.${ p.name },\n`;
+                method += `    ${clazz.hasNamedConstructor ? `${p.name}: ` : ''}${p.name} != null ? ${p.name}() : this.${p.name},\n`;
             } else {
-                method += `    ${ clazz.hasNamedConstructor ? `${ p.name }: ` : '' }${ p.name } ?? this.${ p.name },\n`;
+                method += `    ${clazz.hasNamedConstructor ? `${p.name}: ` : ''}${p.name} ?? this.${p.name},\n`;
             }
         }
 
@@ -1115,7 +1150,7 @@ class DataClassGenerator {
 
             switch (prop.type) {
                 case 'DateTime':
-                    return `${name}${nullSafe}.millisecondsSinceEpoch${endFlag}`;
+                    return `${name}${nullSafe}.toUtc().toIso8601String()${endFlag}`;
                 case 'Color':
                     return `${name}${nullSafe}.value${endFlag}`;
                 case 'IconData':
@@ -1131,7 +1166,8 @@ class DataClassGenerator {
             method += `    '${p.key}': `;
 
             if (p.isEnum) {
-                method += `${p.name}?.index,\n`;
+                // Serialize enum as string name instead of index
+                method += `${p.name}?.name,\n`;
             } else if (p.isCollection) {
                 const nullSafe = p.isNullable ? '?' : '';
 
@@ -1163,11 +1199,12 @@ class DataClassGenerator {
          */
         function customTypeMapping(prop, value = null) {
             prop = prop.isCollection ? prop.collectionType : prop;
-            value = value == null ? "map['" + prop.key + "']" : value;
+            value = value == null ? "convertedMap['" + prop.key + "']" : value;
 
             switch (prop.type) {
                 case 'DateTime':
-                    return `DateTime.fromMillisecondsSinceEpoch(${value})`;
+                    // Parse ISO 8601 string and convert to local time
+                    return `DateTime.parse(${value}).toLocal()`;
                 case 'Color':
                     return `Color(${value})`;
                 case 'IconData':
@@ -1178,11 +1215,13 @@ class DataClassGenerator {
         }
 
         let method = `factory ${clazz.name}.fromMap(Map<String, dynamic> map) {\n`;
+        // Convert map to ensure it's Map<String, dynamic> (handles LinkedMap from json.decode)
+        method += '  final convertedMap = Map<String, dynamic>.from(map);\n';
         method += '  return ' + clazz.type + '(\n';
         for (let p of props) {
             method += `    ${clazz.hasNamedConstructor ? `${p.name}: ` : ''}`;
 
-            const value = `map['${p.key}']`;
+            const value = `convertedMap['${p.key}']`;
             const addNullCheck = !p.isPrimitive && p.isNullable;
 
             if (addNullCheck) {
@@ -1191,15 +1230,35 @@ class DataClassGenerator {
 
             // serialization
             if (p.isEnum) {
-                method += `${p.rawType}.values[${value} ?? 0]`;
-            } else if (p.isCollection) {
-                const defaultValue = withDefaultValues && !p.isNullable ? ` ?? const ${p.isList ? '[]' : '{}'}` : '';
-
-                method += `${p.type}.from(`;
-                if (p.isPrimitive) {
-                    method += `${value}${defaultValue})`;
+                // Deserialize enum from string name (serialized as .name in toMap)
+                const enumDeserialize = `${p.rawType}.values.firstWhere((e) => e.name == ${value}, orElse: () => ${p.rawType}.values.first)`;
+                if (p.isNullable) {
+                    method += `${value} != null ? ${enumDeserialize} : null`;
                 } else {
-                    method += `${value}?.map((x) => ${customTypeMapping(p, 'x')})${defaultValue})`;
+                    method += enumDeserialize;
+                }
+            } else if (p.isCollection) {
+                const defaultCollection = p.isList ? '[]' : '{}';
+
+                // Add null check for collections
+                if (p.isNullable) {
+                    // For nullable collections, check if null first
+                    method += `${value} != null ? `;
+                    method += `${p.type}.from(`;
+                    if (p.isPrimitive) {
+                        method += `${value} ?? const ${defaultCollection})`;
+                    } else {
+                        method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                    }
+                    method += ` : null`;
+                } else {
+                    // For non-nullable collections, always provide a default if null
+                    method += `${p.type}.from(`;
+                    if (p.isPrimitive) {
+                        method += `${value} ?? const ${defaultCollection})`;
+                    } else {
+                        method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                    }
                 }
             } else if (p.isPrimitive) {
                 const defaultValue = !p.isNullable ? ` ?? ${p.defValue}` : '';
@@ -1238,7 +1297,7 @@ class DataClassGenerator {
     insertFromJson(clazz) {
         this.requiresImport('dart:convert');
 
-        const method = `factory ${clazz.name}.fromJson(String source) => ${clazz.name}.fromMap(json.decode(source));`;
+        const method = `factory ${clazz.name}.fromJson(String source) => ${clazz.name}.fromMap(Map<String, dynamic>.from(json.decode(source)));`;
         this.appendOrReplace('fromJson', method, `factory ${clazz.name}.fromJson(String source)`, clazz);
     }
 
@@ -1279,6 +1338,7 @@ class DataClassGenerator {
         const hasCollection = props.find((p) => p.isCollection) != undefined;
 
         let collectionEqualityFn;
+        let needsEqualityImports = false;
         if (hasCollection) {
             // Flutter already has collection equality functions
             // in the foundation package.
@@ -1286,27 +1346,41 @@ class DataClassGenerator {
                 this.requiresImport('package:flutter/foundation.dart');
             } else {
                 this.requiresImport('package:collection/collection.dart');
-
-                collectionEqualityFn = 'collectionEquals';
-                const isListOnly = props.find((p) => p.isCollection && !p.isList) == undefined;
-                if (isListOnly) collectionEqualityFn = 'listEquals';
-                const isMapOnly = props.find((p) => p.isCollection && !p.isMap) == undefined;
-                if (isMapOnly) collectionEqualityFn = 'mapEquals';
-                const isSetOnly = props.find((p) => p.isCollection && !p.isSet) == undefined;
-                if (isSetOnly) collectionEqualityFn = 'setEquals';
+                needsEqualityImports = true;
             }
         }
 
         let method = '@override\n';
         method += 'bool operator ==(Object other) {\n';
         method += '  if (identical(this, other)) return true;\n';
-        if (hasCollection && !isFlutter)
-            method += `  final ${collectionEqualityFn} = const DeepCollectionEquality().equals;\n`
+
+        // For non-Flutter projects, we need to create equality instances
+        if (hasCollection && !isFlutter) {
+            const hasList = props.find((p) => p.isCollection && p.isList) != undefined;
+            const hasMap = props.find((p) => p.isCollection && p.isMap) != undefined;
+            const hasSet = props.find((p) => p.isCollection && p.isSet) != undefined;
+
+            if (hasList) method += '  const listEquals = ListEquality().equals;\n';
+            if (hasMap) method += '  const mapEquals = MapEquality().equals;\n';
+            if (hasSet) method += '  const setEquals = SetEquality().equals;\n';
+        }
+
         method += '\n';
         method += '  return other is ' + clazz.type + ' &&\n';
         for (let prop of props) {
             if (prop.isCollection) {
-                if (isFlutter) collectionEqualityFn = prop.isSet ? 'setEquals' : prop.isMap ? 'mapEquals' : 'listEquals';
+                if (isFlutter) {
+                    collectionEqualityFn = prop.isSet ? 'setEquals' : prop.isMap ? 'mapEquals' : 'listEquals';
+                } else {
+                    // For non-Flutter, use the appropriate equality function
+                    if (prop.isSet) {
+                        collectionEqualityFn = 'setEquals';
+                    } else if (prop.isMap) {
+                        collectionEqualityFn = 'mapEquals';
+                    } else {
+                        collectionEqualityFn = 'listEquals';
+                    }
+                }
                 method += `    ${collectionEqualityFn}(other.${prop.name}, ${prop.name})`;
             } else {
                 method += `    other.${prop.name} == ${prop.name}`;
@@ -1471,7 +1545,12 @@ class DataClassGenerator {
      */
     append(method, clazz, constr = false) {
         let met = indent(method);
-        constr ? clazz.constr = met : clazz.toInsert += '\n' + met;
+        if (constr) {
+            // Add blank line before constructor
+            clazz.constr = '\n' + met;
+        } else {
+            clazz.toInsert += '\n' + met;
+        }
     }
 
     /**
@@ -1496,7 +1575,7 @@ class DataClassGenerator {
             // Make sure to look for 'class ' with the space in order to allow
             // fields that contain the word 'class' as in classifire.
             // issue: https://github.com/ricardo-emerson/dart-data-class-generator/issues/2
-            const classLine = line.trimLeft().startsWith('class ') || line.trimLeft().startsWith('abstract class ');
+            const classLine = line.trimLeft().startsWith('class ') || line.trimLeft().startsWith('abstract class ') || line.trimLeft().startsWith('sealed class ');
 
             if (classLine) {
                 clazz = new DartClass();
@@ -1628,7 +1707,15 @@ class DataClassGenerator {
                         let isFinal = false;
                         let isConst = false;
 
-                        const words = line.trim().split(' ');
+                        // Remove comments before parsing to avoid false positives
+                        // e.g., "int count; // Not final" should not detect "final"
+                        let lineWithoutComments = line;
+                        const commentIndex = line.indexOf('//');
+                        if (commentIndex !== -1) {
+                            lineWithoutComments = line.substring(0, commentIndex).trim();
+                        }
+
+                        const words = lineWithoutComments.trim().split(' ');
                         for (let i = 0; i < words.length; i++) {
                             const word = words[i];
                             const isLast = i == words.length - 1;
@@ -2038,12 +2125,19 @@ class DataClassCodeActions {
         // Only add constructor fix for widget classes.
         if (!this.clazz.isWidget) {
             // Copy with and JSON serialization should be handled by
-            // subclasses.
-            if (!this.clazz.isAbstract) {
+            // subclasses. Allow for sealed class subclasses too.
+            if ((!this.clazz.isAbstract && !this.clazz.isSealed) || this.clazz.isSealedSubclass) {
                 if (readSetting('copyWith.enabled'))
                     codeActions.push(this.createCopyWithFix());
-                if (readSettings(['toMap.enabled', 'fromMap.enabled', 'toJson.enabled', 'fromJson.enabled']))
-                    codeActions.push(this.createSerializationFix());
+                // Separate serialization methods in quick fixes
+                if (readSetting('toMap.enabled'))
+                    codeActions.push(this.constructQuickFix('toMap', 'Generate toMap'));
+                if (readSetting('fromMap.enabled'))
+                    codeActions.push(this.constructQuickFix('fromMap', 'Generate fromMap'));
+                if (readSetting('toJson.enabled'))
+                    codeActions.push(this.constructQuickFix('toJson', 'Generate toJson'));
+                if (readSetting('fromJson.enabled'))
+                    codeActions.push(this.constructQuickFix('fromJson', 'Generate fromJson'));
             }
 
             if (readSetting('toString.enabled'))
@@ -2247,36 +2341,32 @@ function createFileName(name) {
 }
 
 function getCurrentPath() {
-    let path = vscode.window.activeTextEditor.document.fileName;
-    let dirs = path.split("\\");
-    path = '';
-    for (let i = 0; i < dirs.length; i++) {
-        let dir = dirs[i];
-        if (i < dirs.length - 1) {
-            path += dir + "\\";
-        }
-    }
-
-    return path;
+    const filePath = vscode.window.activeTextEditor.document.fileName;
+    // Use path module to handle both Windows and Unix paths correctly
+    const dirPath = path.dirname(filePath);
+    // Ensure path ends with separator for consistency
+    return dirPath + path.sep;
 }
 
 /**
  * @param {string} content
  * @param {string} name
  */
-async function writeFile(content, name, open = true, path = getCurrentPath()) {
-    let p = path + name + '.dart';
-    if (fs.existsSync(p)) {
+async function writeFile(content, name, open = true, dirPath = getCurrentPath()) {
+    // Use path.join for cross-platform compatibility
+    let filePath = path.join(dirPath, name + '.dart');
+    if (fs.existsSync(filePath)) {
         let i = 0;
         do {
-            p = path + name + '_' + ++i + '.dart'
-        } while (fs.existsSync(p));
+            filePath = path.join(dirPath, name + '_' + ++i + '.dart');
+        } while (fs.existsSync(filePath));
     }
 
-    fs.writeFileSync(p, content, 'utf8');
+    fs.writeFileSync(filePath, content, 'utf8');
     if (open) {
-        let openPath = vscode.Uri.parse("file:///" + p);
-        let doc = await vscode.workspace.openTextDocument(openPath);
+        // Use file:// URI format that works on all platforms
+        const openPath = vscode.Uri.file(filePath);
+        const doc = await vscode.workspace.openTextDocument(openPath);
         await vscode.window.showTextDocument(doc);
     }
     return;

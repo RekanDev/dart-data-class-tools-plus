@@ -1,4 +1,4 @@
-class Test {
-  final String tester;
-    
+class Tester{
+  final String name;
+  final int count;
 }

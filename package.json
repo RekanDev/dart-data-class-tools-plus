@@ -1,18 +1,19 @@
 {
-	"name": "dart-data-class-tools",
-	"displayName": "Dart Data Class Generator",
+	"name": "dart-data-class-tools-plus",
+	"displayName": "Dart Data Class Tools Plus",
 	"description": "Create dart data classes easily, fast and without writing boilerplate or running code generation.",
-	"publisher": "ricardo-emerson",
-	"version": "0.8.1",
+	"publisher": "RekanDev",
+	"version": "0.9.0",
 	"engines": {
 		"vscode": "^1.65.0"
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/ricardoemerson/dart-data-class-tools"
+		"url": "https://github.com/RekanDev/dart-data-class-tools-plus"
 	},
 	"icon": "assets/icon.png",
 	"keywords": [
+		"dart data class generator plus",
 		"dart data class generator",
 		"dart data class",
 		"dart data",
@@ -21,32 +22,30 @@
 		"value getter"
 	],
 	"author": {
-		"name": "ricardoemerson"
+		"name": "RekanDev"
 	},
 	"categories": [
 		"Programming Languages",
 		"Other"
 	],
 	"activationEvents": [
-		"onLanguage:dart",
-		"onCommand:dart_data_class.generate.from_props",
-		"onCommand:dart_data_class.generate.from_json"
+		"onLanguage:dart"
 	],
 	"main": "./src/extension.js",
 	"contributes": {
 		"commands": [
 			{
-				"title": "Dart Data Class Generator: Generate from class properties",
+				"title": "Dart Data Class Tools Plus: Generate from class properties",
 				"command": "dart_data_class.generate.from_props"
 			},
 			{
-				"title": "Dart Data Class Generator: Generate from JSON",
+				"title": "Dart Data Class Tools Plus: Generate from JSON",
 				"command": "dart_data_class.generate.from_json"
 			}
 		],
 		"configuration": [
 			{
-				"title": "Dart Data Class Generator",
+				"title": "Dart Data Class Tools Plus",
 				"properties": {
 					"dart-data-class-generator.json.key_format": {
 						"type": "string",
@@ -226,7 +225,9 @@
 		]
 	},
 	"scripts": {
-		"test": "node ./test/runTest.js"
+		"test": "node ./test/runTest.js",
+		"package": "vsce package",
+		"package:patch": "vsce package --out dart-data-class-tools-patch.vsix"
 	},
 	"devDependencies": {
 		"@types/glob": "^7.1.1",

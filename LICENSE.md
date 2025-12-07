@@ -1,6 +1,8 @@
-VSCode extension Dart Data Class Generator
-Copyright (c) 2022 Ricardo Emerson
+VSCode extension Dart Data Class Tools Plus
+Copyright (c) 2025 RekanDev
 All rights reserved.
+
+Based on Dart Data Class Generator by Ricardo Emerson
 
 MIT License
 
