@@ -10,27 +10,30 @@ Create dart data classes easily, fast and without writing boilerplate or running
 
 > This project is an enhanced fork of [Dart Data Class Generator](https://github.com/ricardoemerson/dart-data-class-tools) with additional bug fixes and features.
 
-# What's new in Dart Data Class Tools Plus 0.10.0 🎉
+# What's new in Dart Data Class Tools Plus 0.11.0 🎉
 
 ## New Features
 
-- **Customizable Quick Fixes** - New `quick_fixes.show` setting lets you choose exactly which quick fixes appear in the menu
-  - Select only what you need (e.g., just `constructor` and `copyWith`)
-  - Prevents duplicate selections in VS Code settings
-- **Smart Quick Fixes** - Quick fixes automatically hide for methods that already exist in your class
-  - If `toString()` already exists, "Generate toString" won't clutter your menu
-  - Keeps the quick fix menu clean and relevant
-- **Equatable Stringify Support** - New `toString.useStringify` setting
-  - When enabled with Equatable, generates `@override bool? get stringify => true;` instead of `toString()`
-  - Quick fix "Generate stringify" available when Equatable is detected
+- **Auto Enum Detection** - Enums are detected automatically; no `// enum` comment needed.
+- **Case-Insensitive Enum Matching** - `fromMap` matches enum names regardless of casing.
+- **`fromMap.use_as_cast` Default On** - `as` casting is enabled by default for cleaner null-safe code.
+- **Nullable Enum Support** - Nullable enums use `firstWhereOrNull` and auto-import `package:collection/collection.dart` when needed.
 
 ## Improvements
 
-- **Enhanced fromMap Default Values** - `fromMap.default_values` now controls default values for both nullable and required properties
-  - When `false` (default): Required properties won't get defaults if missing from map
-  - When `true`: Required properties will get defaults if missing from map
+- **Cleaner fromMap** - Removed the extra `convertedMap` indirection; direct map access everywhere.
+- **Enum Serialization** - Uses the non-nullable enum type for lookups and only applies `?.name` when the enum is nullable.
 
-## Previous Version Highlights (0.9.0)
+## Previous Version Highlights
+
+### 0.10.0
+
+- Customizable quick fixes (`quick_fixes.show`)
+- Smart quick fixes hide already existing methods
+- Equatable stringify support (`toString.useStringify`)
+- `fromMap.default_values` controls defaults for nullable & required properties
+
+### 0.9.0
 
 - Fixed collection equality operators for non-Flutter projects
 - Fixed null checks for collections in `fromMap()`
@@ -102,13 +105,10 @@ class User {
 
 #### **Enums**
 
-In order for `enums` to be correctly serialized from and to JSON, please annotate them using a comment like so:
-```dart
-// enum
-final Status status;
-```
-
-Enums are now serialized as string names (e.g., `status.name`) instead of indices for better readability and robustness.
+- Enums are detected automatically (no `// enum` comment required).
+- `fromMap` matches enum names case-insensitively.
+- Nullable enums use `firstWhereOrNull` (auto-imports `package:collection/collection.dart` when needed).
+- Enums serialize as string names (e.g., `status.name`) instead of indices for better readability and robustness.
 
 #### Usage with Equatable
 
@@ -163,6 +163,7 @@ You can customize the generator to only generate the functions you want in your 
 * `dart-data-class-generator.quick_fixes.show`: Array of quick fix names to show. Select which quick fixes should be available in the quick fix menu. Options: `dataClass`, `constructor`, `copyWith`, `toMap`, `fromMap`, `toJson`, `fromJson`, `toString`, `stringify`, `equality`, `useEquatable`. If empty, all enabled quick fixes will be shown. Quick fixes for methods that already exist in the class will not be shown.
 * `dart-data-class-generator.useEquatable`: If true, uses Equatable for value equality and hashCode.
 * `dart-data-class-generator.fromMap.default_values`: If true, checks if a field is null when deserializing and provides a non-null default value. This applies to both nullable and required (non-nullable) properties.
+* `dart-data-class-generator.fromMap.use_as_cast`: If true (**default: true**), uses `as` casting in `fromMap` (e.g., `map['name'] as String` or `map['name'] as String?`).
 * `dart-data-class-generator.constructor.default_values`: If true, generates default values for the constructor.
 * `dart-data-class-generator.constructor.required`: If true, generates @required annotation for every constructor parameter. Note: The generator wont generate default values for the constructor if enabled!
 * `dart-data-class-generator.json.separate`: Whether to separate a JSON into multiple files, when the JSON contains nested objects. Options: `ask` (choose manually every time), `separate` (always separate into multiple files), `current_file` (always insert all classes into the current file).

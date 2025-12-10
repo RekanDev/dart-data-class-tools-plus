@@ -1,5 +1,17 @@
 # Change Log
 
+## 0.11.0
+
+### New Features
+- **Auto Enum Detection**: Enums are detected automatically; no `// enum` comment needed.
+- **Case-Insensitive Enum Matching**: `fromMap` now matches enum names regardless of casing (e.g., `ACTIVE`, `Active`).
+- **`fromMap.use_as_cast` Default On**: `as` casting is enabled by default for cleaner null-safe code.
+
+### Improvements
+- **Nullable Enum Safety**: Nullable enums use `firstWhereOrNull` and auto-import `package:collection/collection.dart` when needed.
+- **Cleaner `fromMap`**: Removed the extra `convertedMap` indirection; direct map access is used everywhere.
+- **Enum Serialization**: Uses the non-nullable enum type for lookups and only applies `?.name` when the enum itself is nullable.
+
 ## 0.10.0
 
 ### New Features

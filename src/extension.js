@@ -769,11 +769,27 @@ class DataClassGenerator {
     constructor(text, clazzes = null, fromJSON = false, part = null) {
         this.text = text;
         this.fromJSON = fromJSON;
+        this.enumTypes = this.detectEnumTypes(text);
         this.clazzes = clazzes == null ? this.parseAndReadClasses() : clazzes;
         this.imports = new Imports(text);
         this.part = part;
         this.generateDataClazzes();
         this.clazz = null;
+    }
+
+    /**
+     * Detect all enum declarations in the file
+     * @param {string} text
+     * @returns {Set<string>} Set of enum type names
+     */
+    detectEnumTypes(text) {
+        const enumTypes = new Set();
+        const enumRegex = /enum\s+([A-Z][a-zA-Z0-9_]*)/g;
+        let match;
+        while ((match = enumRegex.exec(text)) !== null) {
+            enumTypes.add(match[1]);
+        }
+        return enumTypes;
     }
 
     get hasImports() {
@@ -1178,7 +1194,8 @@ class DataClassGenerator {
 
             if (p.isEnum) {
                 // Serialize enum as string name instead of index
-                method += `${p.name}?.name,\n`;
+                const nullSafe = p.isNullable ? '?' : '';
+                method += `${p.name}${nullSafe}.name,\n`;
             } else if (p.isCollection) {
                 const nullSafe = p.isNullable ? '?' : '';
 
@@ -1203,14 +1220,61 @@ class DataClassGenerator {
      */
     insertFromMap(clazz) {
         let withDefaultValues = readSetting('fromMap.default_values');
+        let useAsCast = readSetting('fromMap.use_as_cast');
         let props = clazz.properties;
+
+        // Check if we have nullable enums and require collection import for firstWhereOrNull
+        const hasNullableEnum = props.some(p => p.isEnum && p.isNullable);
+        if (hasNullableEnum) {
+            this.requiresImport('package:collection/collection.dart');
+        }
+
+        /**
+         * Get the type to cast to for 'as' casting
+         * @param {ClassField} prop
+         * @returns {string} The type string for casting
+         */
+        function getCastType(prop) {
+            if (prop.isCollection) {
+                if (prop.isList) {
+                    return prop.isNullable ? 'List<dynamic>?' : 'List<dynamic>';
+                } else if (prop.isSet) {
+                    return prop.isNullable ? 'Set<dynamic>?' : 'Set<dynamic>';
+                } else if (prop.isMap) {
+                    return prop.isNullable ? 'Map<String, dynamic>?' : 'Map<String, dynamic>';
+                }
+            } else if (!prop.isPrimitive && !prop.isEnum) {
+                // Nested object
+                return prop.isNullable ? 'Map<String, dynamic>?' : 'Map<String, dynamic>';
+            } else if (prop.isEnum) {
+                // Enums are deserialized from String
+                return prop.isNullable ? 'String?' : 'String';
+            } else {
+                // Primitive types - use the actual type
+                return prop.isNullable ? prop.rawType : prop.type;
+            }
+        }
+
+        /**
+         * Apply 'as' casting to a value if enabled
+         * @param {string} value - The value expression
+         * @param {ClassField} prop - The property
+         * @returns {string} The value with casting applied if enabled
+         */
+        function applyCast(value, prop) {
+            if (!useAsCast) return value;
+            const castType = getCastType(prop);
+            return `${value} as ${castType}`;
+        }
 
         /**
          * @param {ClassField} prop
+         * @param {string|null} value - The value to use. If null, uses map. If provided (like 'x' from map), it's a nested map that may be LinkedMap.
          */
         function customTypeMapping(prop, value = null) {
             prop = prop.isCollection ? prop.collectionType : prop;
-            value = value == null ? "convertedMap['" + prop.key + "']" : value;
+            const isNestedMap = value != null; // If value is provided, it's from a collection map iteration (may be LinkedMap)
+            value = value == null ? "map['" + prop.key + "']" : value;
 
             switch (prop.type) {
                 case 'DateTime':
@@ -1221,19 +1285,26 @@ class DataClassGenerator {
                 case 'IconData':
                     return `IconData(${value}, fontFamily: 'MaterialIcons')`
                 default:
-                    return `${prop.type + '.fromMap('}${value})`;
+                    // For nested maps (from collection iterations), wrap with Map<String, dynamic>.from() to handle LinkedMap
+                    // Also apply 'as' cast if enabled
+                    let mapValue = isNestedMap ? `Map<String, dynamic>.from(${value})` : value;
+                    if (useAsCast && isNestedMap) {
+                        // Cast the nested map before converting
+                        mapValue = `Map<String, dynamic>.from(${value} as Map<String, dynamic>)`;
+                    }
+                    return `${prop.type + '.fromMap('}${mapValue})`;
             }
         }
 
         let method = `factory ${clazz.name}.fromMap(Map<String, dynamic> map) {\n`;
-        // Convert map to ensure it's Map<String, dynamic> (handles LinkedMap from json.decode)
-        method += '  final convertedMap = Map<String, dynamic>.from(map);\n';
         method += '  return ' + clazz.type + '(\n';
         for (let p of props) {
             method += `    ${clazz.hasNamedConstructor ? `${p.name}: ` : ''}`;
 
-            const value = `convertedMap['${p.key}']`;
-            const addNullCheck = !p.isPrimitive && p.isNullable;
+            let baseValue = `map['${p.key}']`;
+            const value = applyCast(baseValue, p);
+            // Skip null check when using 'as' cast for nullable properties (as String? handles null correctly)
+            const addNullCheck = !p.isPrimitive && p.isNullable && !useAsCast;
 
             if (addNullCheck) {
                 method += `${value} != null ? `;
@@ -1242,32 +1313,49 @@ class DataClassGenerator {
             // serialization
             if (p.isEnum) {
                 // Deserialize enum from string name (serialized as .name in toMap)
-                const enumDeserialize = `${p.rawType}.values.firstWhere((e) => e.name == ${value}, orElse: () => ${p.rawType}.values.first)`;
+                // For enums, we need to cast the base value (before enum conversion)
+                // Wrap cast in parentheses when using 'as' so we can call .toLowerCase()
+                const enumValue = useAsCast ? `(${applyCast(baseValue, p)})` : value;
                 if (p.isNullable) {
-                    method += `${value} != null ? ${enumDeserialize} : null`;
+                    // For nullable enums, use firstWhereOrNull with case-insensitive comparison
+                    method += `${p.type}.values.firstWhereOrNull((element) => element.name.toLowerCase() == ${enumValue}?.toLowerCase())`;
                 } else {
-                    method += enumDeserialize;
+                    // For non-nullable enums, use firstWhere with case-insensitive comparison
+                    method += `${p.type}.values.firstWhere((element) => element.name.toLowerCase() == ${enumValue}.toLowerCase())`;
                 }
             } else if (p.isCollection) {
                 const defaultCollection = p.isList ? '[]' : '{}';
 
                 // Add null check for collections
                 if (p.isNullable) {
-                    // For nullable collections, check if null first
-                    method += `${value} != null ? `;
-                    method += `${p.type}.from(`;
-                    if (p.isPrimitive) {
-                        method += `${value} ?? const ${defaultCollection})`;
+                    // When using 'as' cast, skip null check (as List<dynamic>? handles null correctly)
+                    if (useAsCast) {
+                        method += `${p.type}.from(`;
+                        if (p.isPrimitive) {
+                            method += `${value} ?? const ${defaultCollection})`;
+                        } else {
+                            // For nested objects in collections, pass 'x' directly (casting handled in customTypeMapping)
+                            method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                        }
                     } else {
-                        method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                        // For nullable collections, check if null first
+                        method += `${value} != null ? `;
+                        method += `${p.type}.from(`;
+                        if (p.isPrimitive) {
+                            method += `${value} ?? const ${defaultCollection})`;
+                        } else {
+                            // For nested objects in collections, pass 'x' directly (casting handled in customTypeMapping)
+                            method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
+                        }
+                        method += ` : null`;
                     }
-                    method += ` : null`;
                 } else {
                     // For non-nullable collections, provide a default if null only if setting is enabled
                     method += `${p.type}.from(`;
                     if (p.isPrimitive) {
                         method += withDefaultValues ? `${value} ?? const ${defaultCollection})` : `${value})`;
                     } else {
+                        // For nested objects in collections, pass 'x' directly (casting handled in customTypeMapping)
                         if (withDefaultValues) {
                             method += `${value}?.map((x) => ${customTypeMapping(p, 'x')}) ?? const ${defaultCollection})`;
                         } else {
@@ -1277,7 +1365,9 @@ class DataClassGenerator {
                 }
             } else if (p.isPrimitive) {
                 const defaultValue = (!p.isNullable && withDefaultValues) ? ` ?? ${p.defValue}` : '';
-                method += `${value}${p.isDouble ? '?.toDouble()' : p.isInt ? '?.toInt()' : ''}${defaultValue}`;
+                // When using 'as' cast, skip .toInt()/.toDouble() as the cast already handles the type
+                const typeConversion = useAsCast ? '' : (p.isDouble ? '?.toDouble()' : p.isInt ? '?.toInt()' : '');
+                method += `${value}${typeConversion}${defaultValue}`;
             } else {
                 method += customTypeMapping(p);
             }
@@ -1776,9 +1866,16 @@ class DataClassGenerator {
                         if (type != null && name != null) {
                             const prop = new ClassField(type, name, linePos, isFinal, isConst);
 
+                            // Check if property has enum comment (legacy support)
                             if (i > 0) {
                                 const prevLine = lines[i - 1];
                                 prop.isEnum = prevLine.match(/.*\/\/(\s*)enum/) != null;
+                            }
+
+                            // Auto-detect enums by checking if type matches any enum declaration
+                            if (!prop.isEnum) {
+                                const baseType = type.replace('?', '').trim();
+                                prop.isEnum = this.enumTypes.has(baseType);
                             }
 
                             clazz.properties.push(prop);

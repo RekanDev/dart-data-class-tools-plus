@@ -108,6 +108,15 @@
 						"default": false,
 						"description": "If true, checks if a field is null when deserializing and provides a non-null default value. This applies to both nullable and required (non-nullable) properties."
 					},
+					"dart-data-class-generator.fromMap.use_as_cast": {
+						"type": "boolean",
+						"enum": [
+							true,
+							false
+						],
+						"default": true,
+						"description": "If true, uses 'as' type casting in fromMap method (e.g., map['name'] as String or map['name'] as String?)."
+					},
 					"dart-data-class-generator.constructor.default_values": {
 						"type": "boolean",
 						"enum": [
