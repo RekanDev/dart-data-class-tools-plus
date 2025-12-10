@@ -3,7 +3,7 @@
 	"displayName": "Dart Data Class Tools Plus",
 	"description": "Create dart data classes easily, fast and without writing boilerplate or running code generation.",
 	"publisher": "RekanDev",
-	"version": "0.10.1",
+	"version": "0.11.0",
 	"engines": {
 		"vscode": "^1.65.0"
 	},
